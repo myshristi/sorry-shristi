@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I'm So Sorry, My Princess MiShri 🦄💖</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Canvas Confetti for Celebration -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&family=Sacramento&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK Modules -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase configuration with safe fallbacks for GitHub Pages hosting
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'mishri-apology-app';
+        
+        // Default Firebase Config (Replace with your actual Firebase config if desired)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyDemoKeyForMiShriApologyPage123",
+            authDomain: "mishri-apology.firebaseapp.com",
+            projectId: "mishri-apology",
+            storageBucket: "mishri-apology.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef123456"
+        };
+
+        let app, auth, db;
+        let currentUser = null;
+        let localLogs = [];
+
+        // Local storage backup tracker for hosting environments without backend
+        function getLocalLogs() {
+            try {
+                return JSON.parse(localStorage.getItem('mishri_click_logs') || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveLocalLog(logItem) {
+            localLogs = getLocalLogs();
+            localLogs.unshift(logItem);
+            if (localLogs.length > 50) localLogs.pop(); // Keep last 50
+            try {
+                localStorage.setItem('mishri_click_logs', JSON.stringify(localLogs));
+            } catch (e) {}
+            renderLogs(localLogs);
+        }
+
+        // Initialize Authentication & Firestore
+        async function initFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = userCredential.user;
+                } else {
+                    const userCredential = await signInAnonymously(auth);
+                    currentUser = userCredential.user;
+                }
+                console.log("Authenticated as:", currentUser.uid);
+                listenToLogs();
+            } catch (error) {
+                console.warn("Firestore not connected or demo config used. Falling back to local logging:", error);
+                // Render local storage logs
+                renderLogs(getLocalLogs());
+            }
+        }
+
+        function getClicksCollection() {
+            return collection(db, 'artifacts', appId, 'public', 'data', 'clicks');
+        }
+
+        // Global Event Logging Function (Handles both Cloud Firestore + LocalStorage Fallback)
+        window.logEvent = async function(eventName, details) {
+            const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const logEntry = {
+                event: eventName,
+                details: details,
+                timeString: timeString,
+                timestamp: Date.now()
+            };
+
+            // Always write to local feed for instant UI feedback
+            saveLocalLog(logEntry);
+
+            // Attempt cloud sync if connected
+            if (currentUser && db) {
+                try {
+                    await addDoc(getClicksCollection(), {
+                        userId: currentUser.uid,
+                        event: eventName,
+                        details: details,
+                        timestamp: serverTimestamp(),
+                        timeString: timeString
+                    });
+                } catch (err) {
+                    console.log("Could not sync to cloud, stored locally:", err);
+                }
+            }
+        };
+
+        // Real-time listener for the live feed log
+        function listenToLogs() {
+            if (!db) return;
+            try {
+                const clicksRef = getClicksCollection();
+                onSnapshot(clicksRef, (snapshot) => {
+                    const logs = [];
+                    snapshot.forEach(doc => {
+                        logs.push({ id: doc.id, ...doc.data() });
+                    });
+
+                    // Sort client-side by timestamp (Newest first)
+                    logs.sort((a, b) => {
+                        const tA = a.timestamp?.seconds ? a.timestamp.seconds * 1000 : (a.timestamp || 0);
+                        const tB = b.timestamp?.seconds ? b.timestamp.seconds * 1000 : (b.timestamp || 0);
+                        return tB - tA;
+                    });
+
+                    if (logs.length > 0) {
+                        renderLogs(logs);
+                    }
+                }, (error) => {
+                    console.log("Firestore stream error, relying on local log stream.");
+                });
+            } catch (e) {
+                console.log("Stream init error:", e);
+            }
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('log-feed');
+            if (!container) return;
+
+            if (!logs || logs.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-2">No clicks logged yet. Send the link to MiShri!</p>';
+                return;
+            }
+
+            container.innerHTML = logs.map(log => `
+                <div class="p-2.5 bg-white/90 rounded-xl border border-purple-100 shadow-sm text-xs flex justify-between items-center transition-all hover:bg-white">
+                    <div>
+                        <span class="font-bold text-deepRose">${escapeHtml(log.event)}</span>
+                        <span class="text-gray-700 block sm:inline sm:ml-2 font-medium">${escapeHtml(log.details)}</span>
+                    </div>
+                    <span class="text-[10px] text-gray-400 font-mono ml-2 shrink-0">${escapeHtml(log.timeString || 'Just now')}</span>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Initialize when window is ready
+        window.addEventListener('DOMContentLoaded', () => {
+            initFirebase();
+            window.logEvent('Page Opened', 'MiShri opened the apology page! 💖');
+        });
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        pastelPink: '#FFE5EC',
+                        softRose: '#FFB3C6',
+                        heartRed: '#FF4D6D',
+                        deepRose: '#C9184A',
+                        pastelPurple: '#F3E8FF',
+                        lavender: '#E9D5FF',
+                        softYellow: '#FEF08A'
+                    },
+                    fontFamily: {
+                        heading: ['"Fredoka One"', 'cursive'],
+                        body: ['"Nunito"', 'sans-serif'],
+                        cursive: ['"Sacramento"', 'cursive']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Nunito', sans-serif;
+            overflow-x: hidden;
+            background: linear-gradient(135deg, #ffe5ec 0%, #f3e8ff 50%, #fff0f3 100%);
+            min-height: 100vh;
+        }
+
+        /* Floating background elements animation */
+        @keyframes floatSlow {
+            0% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-18px) rotate(4deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+        
+        @keyframes floatAcross {
+            0% { transform: translateX(-10vw) translateY(0vh) scale(0.8); opacity: 0; }
+            10% { opacity: 0.9; }
+            90% { opacity: 0.9; }
+            100% { transform: translateX(110vw) translateY(-20vh) scale(1.1); opacity: 0; }
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(255, 77, 109, 0.4)); }
+            50% { transform: scale(1.06); filter: drop-shadow(0 0 22px rgba(255, 77, 109, 0.8)); }
+        }
+
+        .animate-float-slow {
+            animation: floatSlow 4s ease-in-out infinite;
+        }
+
+        .animate-pulse-glow {
+            animation: pulseGlow 2.5s infinite;
+        }
+
+        .floating-element {
+            position: fixed;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #ffe5ec;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #ffb3c6;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="text-gray-800 relative pb-16">
+
+    <!-- Floating Animated Particles (Unicorns, Butterflies, Hearts) -->
+    <div id="bg-particles" class="fixed inset-0 pointer-events-none z-0 overflow-hidden"></div>
+
+    <!-- Main Content Container -->
+    <main class="max-w-4xl mx-auto px-4 pt-6 pb-12 relative z-10 flex flex-col items-center">
+
+        <!-- HEADER / HERO SECTION -->
+        <header class="text-center my-6 w-full">
+            <div class="inline-block animate-float-slow mb-2">
+                <span class="text-6xl sm:text-7xl">🦄👑🦋</span>
+            </div>
+            <h1 class="font-heading text-4xl sm:text-6xl text-deepRose mb-3 tracking-wide drop-shadow-sm">
+                I'm So Sorry, MiShri
+            </h1>
+            <p class="font-cursive text-3xl sm:text-4xl text-heartRed font-bold">
+                My Princess MiShri, you mean the absolute world to me...
+            </p>
+        </header>
+
+        <!-- APOLOGY CARD -->
+        <section class="w-full bg-white/85 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-xl border-4 border-softRose mb-10 relative overflow-hidden">
+            <div class="absolute -top-6 -right-6 text-7xl opacity-15">💔</div>
+            <div class="absolute -bottom-6 -left-6 text-7xl opacity-15">🌸</div>
+            
+            <div class="flex items-center gap-3 mb-4 border-b border-softRose/40 pb-3">
+                <span class="text-3xl">📜</span>
+                <h2 class="font-heading text-2xl text-deepRose">From My Heart To Yours, MiShri</h2>
+            </div>
+
+            <div class="space-y-4 text-base sm:text-lg text-gray-700 leading-relaxed font-semibold">
+                <p>
+                    My sweetest MiShri, I am so truly and deeply sorry for how I acted yesterday night. It was entirely my fault. 
+                    I let anger take over and said disrespectful, mean things that I regret with all my heart.
+                </p>
+                <p>
+                    My princess, you deserve only warmth, gentleness, adoration, and unconditional respect. The thought of hurting you breaks my heart into a thousand pieces. I never want to be the reason for your tears.
+                </p>
+                <div class="p-4 bg-pastelPink/70 rounded-2xl border-l-4 border-heartRed text-deepRose font-bold italic shadow-inner">
+                    "MiShri, I promise you with all my heart: I will control my temper, always speak to you with maximum respect, and cherish you like the true princess you are. I promise this will never happen again." 🤙💖
+                </div>
+            </div>
+        </section>
+
+        <!-- INTERACTIVE SORRY NOTE CARDS -->
+        <section class="w-full mb-12">
+            <h2 class="font-heading text-2xl sm:text-3xl text-center text-deepRose mb-6 flex items-center justify-center gap-2">
+                <span>💌</span> Tap These Notes For You, MiShri <span>✨</span>
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Note 1 -->
+                <button onclick="openModal('modal1')" class="group bg-gradient-to-br from-white to-pastelPink hover:from-pastelPink hover:to-softRose p-5 rounded-2xl border-2 border-softRose shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 text-left flex flex-col justify-between">
+                    <div>
+                        <div class="text-4xl mb-3 group-hover:scale-110 transition-transform">🤙</div>
+                        <h3 class="font-heading text-lg text-deepRose mb-1">My Vows To MiShri</h3>
+                        <p class="text-xs text-gray-500">Tap to see my sealed promises...</p>
+                    </div>
+                    <span class="mt-4 text-xs font-bold text-heartRed group-hover:underline">Open Promise &rarr;</span>
+                </button>
+
+                <!-- Note 2 -->
+                <button onclick="openModal('modal2')" class="group bg-gradient-to-br from-white to-pastelPurple hover:from-pastelPurple hover:to-lavender p-5 rounded-2xl border-2 border-purple-200 shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 text-left flex flex-col justify-between">
+                    <div>
+                        <div class="text-4xl mb-3 group-hover:scale-110 transition-transform">👑</div>
+                        <h3 class="font-heading text-lg text-purple-700 mb-1">Why MiShri Is My Princess</h3>
+                        <p class="text-xs text-gray-500">A sweet reminder of how special you are...</p>
+                    </div>
+                    <span class="mt-4 text-xs font-bold text-purple-600 group-hover:underline">Open Note &rarr;</span>
+                </button>
+
+                <!-- Note 3 -->
+                <button onclick="openModal('modal3')" class="group bg-gradient-to-br from-white to-amber-50 hover:from-amber-50 hover:to-softYellow p-5 rounded-2xl border-2 border-amber-200 shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 text-left flex flex-col justify-between">
+                    <div>
+                        <div class="text-4xl mb-3 group-hover:scale-110 transition-transform">🎁</div>
+                        <h3 class="font-heading text-lg text-amber-800 mb-1">MiShri's Peace Voucher</h3>
+                        <p class="text-xs text-gray-500">What I owe you right now!</p>
+                    </div>
+                    <span class="mt-4 text-xs font-bold text-amber-700 group-hover:underline">Redeem Coupon &rarr;</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- FUNNY INTERACTIVE QUIZ SECTION -->
+        <section class="w-full bg-white/90 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-xl border-4 border-purple-200 mb-12">
+            <h2 class="font-heading text-2xl sm:text-3xl text-center text-purple-700 mb-2 flex items-center justify-center gap-2">
+                <span>🎯</span> How Can I Make It Up To MiShri? <span>🤔</span>
+            </h2>
+            <p class="text-center text-gray-600 mb-6 text-sm sm:text-base">Help your clumsy boyfriend make things right, Princess!</p>
+
+            <div class="space-y-6">
+                <!-- Q1 -->
+                <div class="bg-pastelPink/40 p-4 sm:p-5 rounded-2xl border border-softRose">
+                    <p class="font-bold text-gray-800 text-lg mb-3">1. How mad is my Princess MiShri right now?</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" id="q1-options">
+                        <button onclick="selectAnswer(this, 'q1', '😡 Oh no! I promise 100 hugs until MiShri smiles!')" class="quiz-btn py-3 px-4 bg-white hover:bg-softRose/30 border border-softRose rounded-xl text-sm font-semibold transition-all">Super Mad 😡</button>
+                        <button onclick="selectAnswer(this, 'q1', '😤 I hear you, MiShri! Giving you all the space & warmth you need.')" class="quiz-btn py-3 px-4 bg-white hover:bg-softRose/30 border border-softRose rounded-xl text-sm font-semibold transition-all">Slightly Pouty 😤</button>
+                        <button onclick="selectAnswer(this, 'q1', '🥰 MiShri has the softest heart! I love you so much!')" class="quiz-btn py-3 px-4 bg-white hover:bg-softRose/30 border border-softRose rounded-xl text-sm font-semibold transition-all">Ready to forgive silly boyfriend 🥰</button>
+                    </div>
+                    <div id="q1-feedback" class="mt-3 text-sm font-bold text-deepRose hidden"></div>
+                </div>
+
+                <!-- Q2 -->
+                <div class="bg-pastelPurple/40 p-4 sm:p-5 rounded-2xl border border-purple-200">
+                    <p class="font-bold text-gray-800 text-lg mb-3">2. What penalty must your boyfriend pay today?</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="q2-options">
+                        <button onclick="selectAnswer(this, 'q2', '🫂 Unlimited hugs & forehead kisses locked in!')" class="quiz-btn py-3 px-4 bg-white hover:bg-purple-100 border border-purple-200 rounded-xl text-sm font-semibold transition-all text-left">🫂 Unlimited hugs & back rubs</button>
+                        <button onclick="selectAnswer(this, 'q2', '🍫 All of MiShri\'s favorite treats are being ordered right now!')" class="quiz-btn py-3 px-4 bg-white hover:bg-purple-100 border border-purple-200 rounded-xl text-sm font-semibold transition-all text-left">🍫 Lifetime supply of favorite treats</button>
+                        <button onclick="selectAnswer(this, 'q2', '🤙 1,000,000 promises to treat MiShri like royalty!')" class="quiz-btn py-3 px-4 bg-white hover:bg-purple-100 border border-purple-200 rounded-xl text-sm font-semibold transition-all text-left">🤙 Never be mean again promise</button>
+                        <button onclick="selectAnswer(this, 'q2', '✨ PERFECT CHOICE! MiShri deserves ALL of them!')" class="quiz-btn py-3 px-4 bg-white hover:bg-purple-100 border border-purple-200 rounded-xl text-sm font-semibold transition-all text-left">✨ All of the above! (MiShri special)</button>
+                    </div>
+                    <div id="q2-feedback" class="mt-3 text-sm font-bold text-purple-700 hidden"></div>
+                </div>
+
+                <!-- Q3 -->
+                <div class="bg-amber-50/60 p-4 sm:p-5 rounded-2xl border border-amber-200">
+                    <p class="font-bold text-gray-800 text-lg mb-3">3. How much does your boyfriend love MiShri?</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" id="q3-options">
+                        <button onclick="selectAnswer(this, 'q3', '🌙 Way past the moon and all the stars!')" class="quiz-btn py-3 px-4 bg-white hover:bg-amber-100 border border-amber-200 rounded-xl text-sm font-semibold transition-all">To the moon & back 🌙</button>
+                        <button onclick="selectAnswer(this, 'q3', '🚀 Far beyond every galaxy in the universe!')" class="quiz-btn py-3 px-4 bg-white hover:bg-amber-100 border border-amber-200 rounded-xl text-sm font-semibold transition-all">Infinity & beyond 🚀</button>
+                        <button onclick="selectAnswer(this, 'q3', '💖 Absolutely impossible to measure! MiShri is my whole world!')" class="quiz-btn py-3 px-4 bg-white hover:bg-amber-100 border border-amber-200 rounded-xl text-sm font-semibold transition-all">More than words can ever say 💖</button>
+                    </div>
+                    <div id="q3-feedback" class="mt-3 text-sm font-bold text-amber-800 hidden"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- DO YOU FORGIVE ME GAME (RUNAWAY BUTTON) -->
+        <section class="w-full bg-gradient-to-r from-pastelPink via-white to-pastelPurple rounded-3xl p-8 shadow-2xl border-4 border-heartRed text-center relative mb-8">
+            <h2 class="font-heading text-3xl sm:text-4xl text-deepRose mb-3">Do You Forgive Me, MiShri? 🥺</h2>
+            <p class="text-gray-600 mb-8 font-semibold">Please click your answer below... (Choose carefully, Princess! 😉)</p>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-6 min-h-[120px] relative" id="button-area">
+                <!-- YES BUTTON -->
+                <button id="yes-btn" onclick="triggerForgiveness()" class="animate-pulse-glow bg-gradient-to-r from-heartRed to-deepRose text-white font-heading text-2xl px-10 py-4 rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 z-20 cursor-pointer">
+                    YES! ❤️
+                </button>
+
+                <!-- NO BUTTON (Runaway) -->
+                <button id="no-btn" onmouseover="dodgeButton()" onclick="dodgeButton()" ontouchstart="dodgeButton(event)" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-heading text-xl px-8 py-3 rounded-full transition-all duration-150 z-10 sm:relative">
+                    NO 😤
+                </button>
+            </div>
+        </section>
+
+        <!-- BOYFRIEND LIVE ACTIVITY LOG DASHBOARD -->
+        <section class="w-full bg-slate-900/90 text-white backdrop-blur-md rounded-3xl p-5 shadow-2xl border-2 border-purple-400 mb-8">
+            <div class="flex items-center justify-between cursor-pointer border-b border-slate-700 pb-3" onclick="toggleLogPanel()">
+                <div class="flex items-center gap-2">
+                    <span class="relative flex h-3 w-3">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                    <h3 class="font-heading text-lg text-pink-300">Boyfriend Live Feed (Real-Time Tracker)</h3>
+                </div>
+                <span id="toggle-log-icon" class="text-xs bg-slate-800 text-pink-300 px-3 py-1 rounded-full font-bold">Show / Hide 👁️</span>
+            </div>
+            
+            <p class="text-xs text-slate-400 mt-2 mb-3">
+                This panel tracks every button MiShri clicks, choices she picks, and dodge attempts live!
+            </p>
+
+            <div id="log-panel-body" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-slate-800">
+                <div id="log-feed" class="space-y-2">
+                    <p class="text-xs text-slate-400 italic text-center py-2">Loading click tracker...</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL POPUPS FOR NOTES -->
+    <!-- Modal 1 -->
+    <div id="modal1" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border-4 border-softRose relative animate-float-slow">
+            <div class="text-center">
+                <span class="text-5xl">🤙✨</span>
+                <h3 class="font-heading text-2xl text-deepRose mt-3 mb-2">My Solemn Vows To MiShri</h3>
+                <div class="text-left text-gray-700 text-sm sm:text-base space-y-3 my-4 font-semibold">
+                    <p class="flex items-start gap-2"><span>🌸</span> <span>I will always pause, breathe, and never speak to MiShri in anger again.</span></p>
+                    <p class="flex items-start gap-2"><span>🌸</span> <span>I will always listen gently and validate MiShri's feelings.</span></p>
+                    <p class="flex items-start gap-2"><span>🌸</span> <span>I will treat MiShri with the endless respect and love she deserves every day.</span></p>
+                </div>
+                <button onclick="closeModal('modal1')" class="mt-4 bg-deepRose text-white font-bold py-2 px-6 rounded-full hover:bg-heartRed transition-colors">Close Note 💖</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2 -->
+    <div id="modal2" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border-4 border-purple-300 relative animate-float-slow">
+            <div class="text-center">
+                <span class="text-5xl">👑✨</span>
+                <h3 class="font-heading text-2xl text-purple-700 mt-3 mb-2">Why MiShri Is My Royalty</h3>
+                <p class="text-gray-700 text-sm sm:text-base my-4 font-semibold leading-relaxed">
+                    MiShri, your warm smile and sweet presence make every single day brighter. You aren't just my girlfriend—you are my best friend, my princess, and my favorite person in the entire universe.
+                </p>
+                <button onclick="closeModal('modal2')" class="mt-4 bg-purple-600 text-white font-bold py-2 px-6 rounded-full hover:bg-purple-700 transition-colors">Close Note 💜</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3 -->
+    <div id="modal3" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border-4 border-amber-300 relative animate-float-slow">
+            <div class="text-center">
+                <span class="text-5xl">🎁🍦</span>
+                <h3 class="font-heading text-2xl text-amber-800 mt-3 mb-2">MiShri's Peace Offering</h3>
+                <p class="text-gray-700 text-sm sm:text-base my-4 font-semibold">
+                    By redeeming this voucher, MiShri is entitled to:
+                </p>
+                <div class="bg-amber-50 p-4 rounded-xl border border-amber-200 text-amber-900 font-bold text-left space-y-2 text-sm">
+                    <p>✨ 1x Extra warm & long hug session</p>
+                    <p>✨ Any food/dessert MiShri craves today</p>
+                    <p>✨ Complete control over tonight's movie/show pick</p>
+                </div>
+                <button onclick="closeModal('modal3')" class="mt-6 bg-amber-600 text-white font-bold py-2 px-6 rounded-full hover:bg-amber-700 transition-colors">Redeem Voucher 💛</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CELEBRATION MODAL FOR YES -->
+    <div id="yes-modal" class="fixed inset-0 bg-black/60 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border-4 border-heartRed text-center relative animate-float-slow">
+            <div class="text-6xl mb-4">🦄🥳💖</div>
+            <h3 class="font-heading text-3xl text-deepRose mb-3">THANK YOU, MY PRINCESS MISHRi! 💕</h3>
+            <p class="text-gray-700 text-lg font-bold mb-4">
+                You just made your boyfriend the happiest guy in the world! 😭💗
+            </p>
+            <p class="text-gray-600 text-sm sm:text-base mb-6 leading-relaxed">
+                Thank you for your forgiving heart, MiShri. I promise to hold myself accountable, keep every single vow, and make you feel like the most loved princess every single day! 🥰
+            </p>
+            <button onclick="closeModal('yes-modal')" class="bg-gradient-to-r from-heartRed to-deepRose text-white font-heading text-xl py-3 px-8 rounded-full shadow-lg hover:scale-105 transition-transform">
+                Give Boyfriend A Hug 🫂
+            </button>
+        </div>
+    </div>
+
+    <!-- UI INTERACTION LOGIC -->
+    <script>
+        // 1. Generate Floating Background Items (Unicorns, Butterflies, Hearts)
+        const bgContainer = document.getElementById('bg-particles');
+        const icons = ['🦄', '🦋', '🌸', '✨', '💖', '🦋', '🎈', '👑'];
+
+        function createFloatingParticle() {
+            const particle = document.createElement('div');
+            particle.className = 'floating-element text-2xl sm:text-3xl';
+            particle.innerText = icons[Math.floor(Math.random() * icons.length)];
+            
+            const startY = Math.random() * 90;
+            const duration = 12 + Math.random() * 10;
+            const delay = Math.random() * 3;
+
+            particle.style.top = `${startY}vh`;
+            particle.style.left = `-50px`;
+            particle.style.animation = `floatAcross ${duration}s linear ${delay}s infinite`;
+
+            bgContainer.appendChild(particle);
+        }
+
+        for (let i = 0; i < 18; i++) {
+            createFloatingParticle();
+        }
+
+        // 2. Dodge "No" Button Logic
+        let dodgeCount = 0;
+        function dodgeButton(e) {
+            if (e) e.preventDefault();
+            const noBtn = document.getElementById('no-btn');
+            const yesBtn = document.getElementById('yes-btn');
+            
+            const maxX = window.innerWidth - noBtn.offsetWidth - 40;
+            const maxY = window.innerHeight - noBtn.offsetHeight - 40;
+            
+            const newX = Math.max(20, Math.floor(Math.random() * maxX));
+            const newY = Math.max(20, Math.floor(Math.random() * maxY));
+            
+            noBtn.style.position = 'fixed';
+            noBtn.style.left = `${newX}px`;
+            noBtn.style.top = `${newY}px`;
+            noBtn.style.zIndex = '40';
+            
+            dodgeCount++;
+            
+            // Log Dodge Event
+            if (window.logEvent) {
+                window.logEvent('Clicked NO (Dodged)', `Dodge attempt #${dodgeCount}`);
+            }
+
+            // Grow the YES button on each NO dodge
+            const currentScale = 1 + (dodgeCount * 0.1);
+            yesBtn.style.transform = `scale(${Math.min(currentScale, 1.8)})`;
+
+            // Change No button text playfully
+            const funnyPhrases = [
+                "NO 😤", 
+                "Are you sure, MiShri? 🥺", 
+                "Click YES, Princess! 🦄", 
+                "Wrong button, MiShri! 👉", 
+                "You know you love me! 💖", 
+                "Can't catch me! 🦋",
+                "Just click YES, MiShri! 🥰"
+            ];
+            noBtn.innerText = funnyPhrases[dodgeCount % funnyPhrases.length];
+        }
+
+        // 3. Quiz Answer Selection Handler
+        function selectAnswer(btn, qId, feedbackText) {
+            const parent = document.getElementById(`${qId}-options`);
+            const buttons = parent.querySelectorAll('.quiz-btn');
+            
+            buttons.forEach(b => {
+                b.classList.remove('bg-softRose', 'bg-purple-200', 'bg-amber-200', 'font-bold');
+                b.classList.add('bg-white');
+            });
+
+            btn.classList.remove('bg-white');
+            btn.classList.add('bg-softRose', 'font-bold');
+
+            const feedbackEl = document.getElementById(`${qId}-feedback`);
+            feedbackEl.innerText = feedbackText;
+            feedbackEl.classList.remove('hidden');
+
+            // Log Quiz Answer Selection
+            if (window.logEvent) {
+                const choiceText = btn.innerText.trim();
+                window.logEvent('Quiz Selection', `Question: ${qId} | Answer: "${choiceText}"`);
+            }
+        }
+
+        // 4. Modal Handlers
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+            if (window.logEvent) {
+                const noteTitles = {
+                    'modal1': 'Vows To MiShri Note',
+                    'modal2': 'Why MiShri Is Royalty Note',
+                    'modal3': 'Peace Voucher Coupon'
+                };
+                window.logEvent('Opened Note', noteTitles[id] || id);
+            }
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function toggleLogPanel() {
+            const body = document.getElementById('log-panel-body');
+            body.classList.toggle('hidden');
+        }
+
+        // 5. Trigger Forgiveness Celebration
+        function triggerForgiveness() {
+            if (window.logEvent) {
+                window.logEvent('FORGIVEN! 🎉', `MiShri clicked YES! (Total NO dodges: ${dodgeCount})`);
+            }
+
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 140,
+                    spread: 90,
+                    origin: { y: 0.6 }
+                });
+                
+                setTimeout(() => {
+                    confetti({
+                        particleCount: 90,
+                        angle: 60,
+                        spread: 60,
+                        origin: { x: 0 }
+                    });
+                }, 250);
+                
+                setTimeout(() => {
+                    confetti({
+                        particleCount: 90,
+                        angle: 120,
+                        spread: 60,
+                        origin: { x: 1 }
+                    });
+                }, 400);
+            }
+
+            openModal('yes-modal');
+        }
+    </script>
+</body>
+</html>
